@@ -1,0 +1,34 @@
+{
+  "name": "demiurge",
+  "version": "1.0.0",
+  "description": "Full-stack NFT platform with custom blockchain backend, marketplace, and NFT WARS battle system",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:blockchain": "cd blockchain && npm run node",
+    "test": "npm run test:blockchain && npm run test:backend",
+    "test:blockchain": "cd blockchain && npm test",
+    "test:backend": "cd backend && npm test",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "deploy:contracts": "cd blockchain && npm run deploy",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "keywords": [
+    "nft",
+    "blockchain",
+    "ethereum",
+    "marketplace",
+    "web3"
+  ],
+  "author": "ALaustrup",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+

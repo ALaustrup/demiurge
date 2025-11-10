@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: demiurge-postgres
+    environment:
+      POSTGRES_USER: demiurge
+      POSTGRES_PASSWORD: demiurge_password
+      POSTGRES_DB: demiurge_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demiurge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    container_name: demiurge-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: demiurge
+      MONGO_INITDB_ROOT_PASSWORD: demiurge_password
+      MONGO_INITDB_DATABASE: demiurge_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: demiurge-ipfs
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/data/ipfs/staging
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: demiurge-backend
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://demiurge:demiurge_password@postgres:5432/demiurge_db
+      MONGODB_URI: mongodb://demiurge:demiurge_password@mongodb:27017/demiurge_db?authSource=admin
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      IPFS_URL: http://ipfs:5001
+      BLOCKCHAIN_RPC_URL: http://localhost:8545
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      ipfs:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  mongo_data:
+  ipfs_data:
+  ipfs_staging:
+

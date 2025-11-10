@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 10, 10, 15;
+  --background-end-rgb: 5, 5, 8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      135deg,
+      rgb(10, 10, 15) 0%,
+      rgb(22, 33, 62) 50%,
+      rgb(5, 5, 8) 100%
+    );
+  min-height: 100vh;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+@layer utilities {
+  .text-cyber-glow {
+    text-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88, 0 0 30px #00ff88;
+  }
+  
+  .text-cyber-purple {
+    text-shadow: 0 0 10px #8b5cf6, 0 0 20px #8b5cf6;
+  }
+  
+  .border-cyber {
+    border: 1px solid #00ff88;
+    box-shadow: 0 0 5px #00ff88, inset 0 0 5px #00ff88;
+  }
+  
+  .bg-cyber-dark {
+    background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+  }
+  
+  .bg-cyber-card {
+    background: rgba(26, 26, 46, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+  }
+}
+
