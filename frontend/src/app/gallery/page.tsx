@@ -381,14 +381,22 @@ export default function GalleryPage() {
                   Created by: {selectedNFT.creator_username} | Owned by: {selectedNFT.owner_username}
                 </Text>
                 {user && selectedNFT.owner_username === user.username && (
-                  <Button
-                    variant="cyber"
-                    onClick={onListOpen}
-                    fontFamily="heading"
-                    mt={4}
-                  >
-                    LIST FOR SALE
-                  </Button>
+                  <>
+                    {selectedNFT?.is_heroic || selectedNFT?.is_soulbound ? (
+                      <Badge colorScheme="purple" fontSize="sm" px={3} py={1} fontFamily="body" mt={4}>
+                        SOULBOUND - NOT TRADABLE
+                      </Badge>
+                    ) : (
+                      <Button
+                        variant="cyber"
+                        onClick={onListOpen}
+                        fontFamily="heading"
+                        mt={4}
+                      >
+                        LIST FOR SALE
+                      </Button>
+                    )}
+                  </>
                 )}
               </VStack>
             )}

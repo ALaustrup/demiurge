@@ -30,8 +30,10 @@ interface LeaderboardEntry {
   id: number;
   username: string;
   bits: number;
-  socialScore: number;
-  socialTier: string;
+  social_score?: number;
+  socialScore?: number;
+  social_tier?: string;
+  socialTier?: string;
 }
 
 export default function LeaderboardPage() {
@@ -46,7 +48,15 @@ export default function LeaderboardPage() {
   const fetchLeaderboard = async () => {
     try {
       const response = await api.get(`/user/leaderboard?type=${type}&limit=100`);
-      setLeaderboard(response.data.leaderboard);
+      // Normalize the response to handle both snake_case and camelCase
+      const normalized = response.data.leaderboard.map((entry: any) => ({
+        id: entry.id,
+        username: entry.username,
+        bits: entry.bits || 0,
+        socialScore: entry.socialScore || entry.social_score || 0,
+        socialTier: entry.socialTier || entry.social_tier || 'bronze',
+      }));
+      setLeaderboard(normalized);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
@@ -115,13 +125,13 @@ export default function LeaderboardPage() {
                             #{index + 1}
                           </Td>
                           <Td fontFamily="body" color="gray.300">{entry.username}</Td>
-                          <Td fontFamily="heading" color="neon.cyan">{entry.socialScore.toLocaleString()}</Td>
+                          <Td fontFamily="heading" color="neon.cyan">{(entry.socialScore || 0).toLocaleString()}</Td>
                           <Td>
-                            <Badge colorScheme={getTierColor(entry.socialTier)} fontFamily="body">
-                              {entry.socialTier.toUpperCase()}
+                            <Badge colorScheme={getTierColor(entry.socialTier || 'bronze')} fontFamily="body">
+                              {(entry.socialTier || 'bronze').toUpperCase()}
                             </Badge>
                           </Td>
-                          <Td fontFamily="body" color="gray.300">{entry.bits.toLocaleString()}</Td>
+                          <Td fontFamily="body" color="gray.300">{(entry.bits || 0).toLocaleString()}</Td>
                         </Tr>
                       ))}
                     </Tbody>
@@ -149,11 +159,11 @@ export default function LeaderboardPage() {
                             #{index + 1}
                           </Td>
                           <Td fontFamily="body" color="gray.300">{entry.username}</Td>
-                          <Td fontFamily="heading" color="neon.green">{entry.bits.toLocaleString()}</Td>
-                          <Td fontFamily="body" color="gray.300">{entry.socialScore.toLocaleString()}</Td>
+                          <Td fontFamily="heading" color="neon.green">{(entry.bits || 0).toLocaleString()}</Td>
+                          <Td fontFamily="body" color="gray.300">{(entry.socialScore || 0).toLocaleString()}</Td>
                           <Td>
-                            <Badge colorScheme={getTierColor(entry.socialTier)} fontFamily="body">
-                              {entry.socialTier.toUpperCase()}
+                            <Badge colorScheme={getTierColor(entry.socialTier || 'bronze')} fontFamily="body">
+                              {(entry.socialTier || 'bronze').toUpperCase()}
                             </Badge>
                           </Td>
                         </Tr>

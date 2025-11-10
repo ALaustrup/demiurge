@@ -1,16 +1,60 @@
 'use client';
 
-import { Box, Container, Heading, Text, Button, VStack, HStack, Stat, StatLabel, StatNumber, SimpleGrid, Card, CardBody } from '@chakra-ui/react';
+import { Box, Container, Heading, Text, Button, VStack, HStack, Stat, StatLabel, StatNumber, SimpleGrid, Card, CardBody, useToast } from '@chakra-ui/react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import api from '@/utils/api';
+import { useAuthStore } from '@/store/authStore';
+import { useWalletConnection } from '@/hooks/useWalletConnection';
+import { isWalletAvailable } from '@/utils/web3Provider';
 
 export default function Home() {
+  const { user, walletLoginOrLink } = useAuthStore();
+  const { address, isCorrectNetwork, connectWallet, ensureDemiurgeNetwork } = useWalletConnection();
   const [stats, setStats] = useState({ nfts: 0, users: 0, battles: 0, listings: 0 });
+  const [walletAvailable, setWalletAvailable] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
+    setWalletAvailable(isWalletAvailable());
     fetchStats();
   }, []);
+
+  const handleConnectWallet = async () => {
+    if (!isWalletAvailable()) {
+      toast({
+        title: 'No Wallet Detected',
+        description: 'Please install MetaMask or open this site in your wallet app.',
+        status: 'warning',
+        duration: 5000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    try {
+      await connectWallet();
+      if (!isCorrectNetwork) {
+        await ensureDemiurgeNetwork();
+      }
+      await walletLoginOrLink();
+      toast({
+        title: 'Welcome to Demiurge!',
+        description: 'Successfully connected your wallet.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Connection Failed',
+        description: error.message || 'Failed to connect wallet. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -67,18 +111,54 @@ export default function Home() {
               Create, trade, and battle with NFTs in the cyberpunk metaverse. 
               Earn Bits, level up your collection, and dominate the leaderboard.
             </Text>
-            <HStack spacing={6} justify="center">
-              <Link href="/auth/register">
-                <Button variant="cyber" size="lg" px={8}>
-                  ENTER THE MATRIX
-                </Button>
-              </Link>
-              <Link href="/gallery">
-                <Button variant="neon" size="lg" px={8}>
-                  EXPLORE GALLERY
-                </Button>
-              </Link>
-            </HStack>
+            {!user ? (
+              <VStack spacing={4}>
+                {walletAvailable && (
+                  <Button
+                    variant="neon"
+                    size="lg"
+                    px={12}
+                    py={8}
+                    fontSize="xl"
+                    onClick={handleConnectWallet}
+                    _hover={{ transform: 'scale(1.05)', boxShadow: '0 0 30px rgba(0, 255, 136, 0.5)' }}
+                    transition="all 0.3s"
+                  >
+                    🔗 CONNECT WALLET
+                  </Button>
+                )}
+                <HStack spacing={6} justify="center" flexWrap="wrap">
+                  <Link href="/auth/register">
+                    <Button variant="cyber" size="lg" px={8}>
+                      SIGN UP WITH EMAIL
+                    </Button>
+                  </Link>
+                  <Link href="/auth/login">
+                    <Button variant="outline" size="lg" px={8} borderColor="neon.green" color="neon.green" _hover={{ bg: 'rgba(0, 255, 136, 0.1)' }}>
+                      LOGIN
+                    </Button>
+                  </Link>
+                </HStack>
+                {!walletAvailable && (
+                  <Text fontSize="sm" color="gray.500" fontFamily="body" mt={4}>
+                    No wallet detected. Install MetaMask or open in a wallet browser.
+                  </Text>
+                )}
+              </VStack>
+            ) : (
+              <HStack spacing={6} justify="center" flexWrap="wrap">
+                <Link href="/battles">
+                  <Button variant="neon" size="lg" px={8}>
+                    START BATTLING
+                  </Button>
+                </Link>
+                <Link href="/gallery">
+                  <Button variant="cyber" size="lg" px={8}>
+                    EXPLORE GALLERY
+                  </Button>
+                </Link>
+              </HStack>
+            )}
           </Box>
 
           {/* Stats Section */}

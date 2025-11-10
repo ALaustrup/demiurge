@@ -24,6 +24,9 @@ contract DemiurgeNFT is ERC721URIStorage, Ownable {
     // Mapping from user address to their token IDs
     mapping(address => uint256[]) public userTokens;
     
+    // Mapping from token ID to soulbound status
+    mapping(uint256 => bool) private _soulbound;
+    
     // NFT Metadata structure
     struct NFTMetadata {
         string name;
@@ -121,6 +124,39 @@ contract DemiurgeNFT is ERC721URIStorage, Ownable {
      */
     function totalSupply() public view returns (uint256) {
         return _tokenIds;
+    }
+
+    /**
+     * @dev Set soulbound status for a token (only owner)
+     */
+    function setSoulbound(uint256 tokenId, bool value) external onlyOwner {
+        _soulbound[tokenId] = value;
+    }
+
+    /**
+     * @dev Check if a token is soulbound
+     */
+    function isSoulbound(uint256 tokenId) public view returns (bool) {
+        return _soulbound[tokenId];
+    }
+
+    /**
+     * @dev Override _update to prevent transfers of soulbound tokens
+     * In OpenZeppelin v5, _update replaces _beforeTokenTransfer
+     */
+    function _update(
+        address to,
+        uint256 tokenId,
+        address auth
+    ) internal override returns (address) {
+        address from = _ownerOf(tokenId);
+        
+        // Prevent transfers of soulbound tokens (allow minting and burning)
+        if (from != address(0) && to != address(0) && _soulbound[tokenId]) {
+            revert("Soulbound: token is non-transferable");
+        }
+        
+        return super._update(to, tokenId, auth);
     }
 }
 

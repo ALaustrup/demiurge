@@ -16,6 +16,9 @@ const marketplaceRoutes = require('./routes/marketplace');
 const battleRoutes = require('./routes/battle');
 const chatRoutes = require('./routes/chat');
 const userRoutes = require('./routes/user');
+const heroRoutes = require('./routes/hero');
+const ladderRoutes = require('./routes/ladder');
+const rpgRoutes = require('./routes/rpg');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -40,6 +43,9 @@ app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/battle', battleRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/hero', heroRoutes);
+app.use('/api/ladder', ladderRoutes);
+app.use('/api/rpg', rpgRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

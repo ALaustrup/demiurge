@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "generate-mock-data": "node scripts/generateMockData.js"
+    "generate-mock-data": "node scripts/generateMockData.js",
+    "seed-moves": "node scripts/seedMoves.js"
   },
   "keywords": [
     "nft",

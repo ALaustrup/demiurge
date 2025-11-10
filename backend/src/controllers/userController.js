@@ -1,4 +1,6 @@
 const { pool } = require('../config/database');
+const { getUserNftCount } = require('../services/storageService');
+const { getVaultLimitForTier } = require('../config/storageConfig');
 
 /**
  * Get user profile
@@ -8,7 +10,8 @@ const getUserProfile = async (req, res) => {
     const { userId } = req.params;
 
     const result = await pool.query(
-      `SELECT id, username, wallet_address, bits, social_score, social_tier, created_at
+      `SELECT id, username, wallet_address, bits, social_score, social_tier, 
+              hero_regenerations_used, hero_regenerations_limit, created_at
        FROM users
        WHERE id = $1`,
       [userId]
@@ -44,6 +47,8 @@ const getUserProfile = async (req, res) => {
       bits: user.bits,
       socialScore: user.social_score,
       socialTier: user.social_tier,
+      heroRegenerationsUsed: user.hero_regenerations_used || 0,
+      heroRegenerationsLimit: user.hero_regenerations_limit || 5,
       createdAt: user.created_at,
       stats: {
         nftCount: parseInt(nftCountResult.rows[0].count),
@@ -124,8 +129,18 @@ const getLeaderboard = async (req, res) => {
       [limit]
     );
 
+    // Convert snake_case to camelCase for consistency
+    const leaderboard = result.rows.map((row) => ({
+      id: row.id,
+      username: row.username,
+      walletAddress: row.wallet_address,
+      bits: row.bits || 0,
+      socialScore: row.social_score || 0,
+      socialTier: row.social_tier || 'bronze',
+    }));
+
     res.json({
-      leaderboard: result.rows,
+      leaderboard,
       type,
     });
   } catch (error) {
@@ -134,9 +149,30 @@ const getLeaderboard = async (req, res) => {
   }
 };
 
+/**
+ * Get current user's vault usage
+ */
+const getMyVaultUsage = async (req, res) => {
+  try {
+    const user = req.user;
+    const used = await getUserNftCount(user.id);
+    const limit = getVaultLimitForTier(user.social_tier);
+
+    res.json({
+      used,
+      limit, // null = unlimited
+      socialTier: user.social_tier,
+    });
+  } catch (error) {
+    console.error('Get vault usage error:', error);
+    res.status(500).json({ message: 'Failed to get vault usage' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateSocialScore,
   getLeaderboard,
+  getMyVaultUsage,
 };
 

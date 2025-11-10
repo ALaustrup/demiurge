@@ -22,10 +22,13 @@ import {
 } from '@chakra-ui/react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/utils/api';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@chakra-ui/react';
 
 export default function CreateNFTPage() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const toast = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [mediaType, setMediaType] = useState('image');
@@ -75,9 +78,39 @@ export default function CreateNFTPage() {
         },
       });
 
+      toast({
+        title: 'NFT Created!',
+        description: 'Your NFT has been successfully created',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
       router.push('/gallery');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create NFT');
+      const errorMessage = err.response?.data?.message || 'Failed to create NFT';
+      setError(errorMessage);
+      
+      // Handle vault limit error specifically
+      if (err.response?.status === 403 && err.response?.data?.error === 'VAULT_LIMIT_REACHED') {
+        const vaultData = err.response?.data?.data;
+        toast({
+          title: 'Vault Limit Reached',
+          description: `You've filled your free vault (${vaultData?.used || '?'}/${vaultData?.limit || '?'}). Win more battles or reach a higher tier to expand it!`,
+          status: 'warning',
+          duration: 7000,
+          isClosable: true,
+        });
+        // Set a more detailed error message with link suggestion
+        setError(`Vault limit reached (${vaultData?.used || '?'}/${vaultData?.limit || '?'} NFTs). Visit your profile to see vault details and upgrade options.`);
+      } else {
+        toast({
+          title: 'Creation Failed',
+          description: errorMessage,
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -98,7 +131,21 @@ export default function CreateNFTPage() {
         {error && (
           <Alert status="error" bg="rgba(236, 72, 153, 0.1)" borderColor="neon.pink">
             <AlertIcon />
-            {error}
+            <Box flex="1">
+              <Text mb={error.includes('Vault limit') ? 2 : 0}>{error}</Text>
+              {error.includes('Vault limit') && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push('/profile')}
+                  colorScheme="purple"
+                  fontFamily="heading"
+                  mt={2}
+                >
+                  View My Vault
+                </Button>
+              )}
+            </Box>
           </Alert>
         )}
 

@@ -24,6 +24,11 @@ const listNFTForSale = async (req, res) => {
 
     const nft = nftResult.rows[0];
 
+    // Prevent listing hero NFTs (soulbound)
+    if (nft.is_heroic || nft.is_soulbound) {
+      return res.status(400).json({ message: 'Heroic NFTs are soulbound and cannot be listed for sale' });
+    }
+
     // Check if already listed
     const existingListing = await pool.query(
       'SELECT * FROM marketplace_listings WHERE nft_id = $1 AND status = $2',
@@ -70,14 +75,16 @@ const getListings = async (req, res) => {
        FROM marketplace_listings l
        JOIN nfts n ON l.nft_id = n.id
        JOIN users u ON l.seller_id = u.id
-       WHERE l.status = $1
+       WHERE l.status = $1 AND (n.is_heroic IS NULL OR n.is_heroic = FALSE)
        ORDER BY l.created_at DESC
        LIMIT $2 OFFSET $3`,
       ['active', limit, offset]
     );
 
     const countResult = await pool.query(
-      'SELECT COUNT(*) FROM marketplace_listings WHERE status = $1',
+      `SELECT COUNT(*) FROM marketplace_listings l
+       JOIN nfts n ON l.nft_id = n.id
+       WHERE l.status = $1 AND (n.is_heroic IS NULL OR n.is_heroic = FALSE)`,
       ['active']
     );
     const total = parseInt(countResult.rows[0].count);

@@ -1,0 +1,7 @@
+[
+  "function mintReward(address to, uint256 id, uint256 amount) external",
+  "function mintBatchReward(address to, uint256[] calldata ids, uint256[] calldata amounts) external",
+  "function setURI(string memory newuri) external",
+  "function owner() external view returns (address)"
+]
+

@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const { uploadToIPFS, uploadMetadata } = require('../services/ipfs');
 const { mintNFT } = require('../services/blockchain');
+const { enforceUserNftLimitOrThrow } = require('../services/storageService');
 const multer = require('multer');
 
 // Configure multer for file uploads
@@ -19,6 +20,20 @@ const createNFT = async (req, res) => {
 
     if (!name || !description || !mediaType || !file) {
       return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // Check vault limit before proceeding
+    try {
+      await enforceUserNftLimitOrThrow(req.user);
+    } catch (err) {
+      if (err.code === 'VAULT_LIMIT_REACHED') {
+        return res.status(403).json({
+          error: 'VAULT_LIMIT_REACHED',
+          message: 'You have reached your free NFT vault limit for your tier.',
+          data: err.meta,
+        });
+      }
+      throw err;
     }
 
     // Upload file to IPFS
