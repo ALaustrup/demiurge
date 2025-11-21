@@ -7,11 +7,11 @@
 use crate::core::state::State;
 use crate::core::transaction::Transaction;
 
-mod abyss_registry;
-mod avatars_profiles;
-mod bank_cgt;
-mod fabric_manager;
-mod nft_dgen;
+pub mod abyss_registry;
+pub mod avatars_profiles;
+pub mod bank_cgt;
+pub mod fabric_manager;
+pub mod nft_dgen;
 
 pub use abyss_registry::{get_listing, AbyssRegistryModule, ListingId};
 pub use avatars_profiles::{is_archon, AvatarsProfilesModule};
