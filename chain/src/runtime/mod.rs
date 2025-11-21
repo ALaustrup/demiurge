@@ -2,20 +2,26 @@
 //!
 //! This module provides the infrastructure for routing transactions to
 //! runtime modules. In Phase 3, concrete modules (bank_cgt, nft_dgen, etc.)
-//! will be registered here and handle transaction execution.
+//! are registered here and handle transaction execution.
 
 use crate::core::state::State;
 use crate::core::transaction::Transaction;
+
+mod avatars_profiles;
+mod bank_cgt;
+mod nft_dgen;
+
+pub use avatars_profiles::{is_archon, AvatarsProfilesModule};
+pub use bank_cgt::{get_balance_cgt, BankCgtModule};
+pub use nft_dgen::{get_nft, get_nfts_by_owner, NftDgenModule};
 
 /// Trait that all runtime modules must implement.
 ///
 /// Runtime modules handle specific domains of functionality:
 /// - `bank_cgt`: CGT token balances and transfers
 /// - `nft_dgen`: D-GEN NFT minting and transfers
-/// - `fabric_manager`: Fabric asset registration and seeder rewards
-/// - `abyss_registry`: Marketplace listings and purchases
 /// - `avatars_profiles`: Archon role flags and identity profiles
-pub trait RuntimeModule {
+pub trait RuntimeModule: Send + Sync {
     /// Returns the unique identifier for this module (e.g., "bank_cgt").
     fn module_id(&self) -> &'static str;
 
@@ -23,19 +29,19 @@ pub trait RuntimeModule {
     ///
     /// # Arguments
     /// - `call_id`: The specific function to call (e.g., "transfer", "mint_dgen")
-    /// - `payload`: Bincode-serialized call parameters
+    /// - `tx`: The full transaction (modules can access tx.from, tx.fee, etc.)
     /// - `state`: Mutable reference to chain state for reading/writing
     ///
     /// # Returns
     /// - `Ok(())` if the call succeeded
     /// - `Err(String)` with an error message if the call failed
-    fn dispatch(&self, call_id: &str, payload: &[u8], state: &mut State) -> Result<(), String>;
+    fn dispatch(&self, call_id: &str, tx: &Transaction, state: &mut State) -> Result<(), String>;
 }
 
 /// Runtime registry that holds all registered modules.
 ///
-/// In Phase 3, this will be populated with concrete module instances
-/// (BankCgtModule, NftDgenModule, etc.) that implement `RuntimeModule`.
+/// The Runtime is created fresh for each block execution in Phase 3.
+/// In later phases, this may be stored in Node for reuse.
 pub struct Runtime {
     /// List of registered runtime modules.
     modules: Vec<Box<dyn RuntimeModule>>,
@@ -43,55 +49,79 @@ pub struct Runtime {
 
 impl Runtime {
     /// Create a new empty runtime registry.
-    ///
-    /// In Phase 3, this will be extended to register all runtime modules:
-    /// ```rust
-    /// let mut runtime = Runtime::new();
-    /// runtime.register(Box::new(BankCgtModule::new()));
-    /// runtime.register(Box::new(NftDgenModule::new()));
-    /// // ... etc
-    /// ```
     pub fn new() -> Self {
-        // TODO: Phase 3 will register modules here:
-        //  - bank_cgt module
-        //  - nft_dgen module
-        //  - fabric_manager module
-        //  - abyss_registry module
-        //  - avatars_profiles module
-        Runtime {
+        Self {
             modules: Vec::new(),
         }
     }
 
-    /// Register a new runtime module.
-    ///
-    /// This will be used in Phase 3 to add concrete module implementations.
-    #[allow(dead_code)]
-    pub fn register(&mut self, module: Box<dyn RuntimeModule>) {
+    /// Add a module to the runtime registry.
+    pub fn with_module(mut self, module: Box<dyn RuntimeModule>) -> Self {
         self.modules.push(module);
+        self
+    }
+
+    /// Create a runtime with all default modules registered.
+    pub fn with_default_modules() -> Self {
+        Self::new()
+            .with_module(Box::new(BankCgtModule::new()))
+            .with_module(Box::new(AvatarsProfilesModule::new()))
+            .with_module(Box::new(NftDgenModule::new()))
     }
 
     /// Dispatch a transaction to the appropriate runtime module.
     ///
     /// Looks up the module by `module_id` and calls its `dispatch` method
-    /// with the transaction's `call_id` and `payload`.
+    /// with the transaction's `call_id` and the full transaction.
     ///
     /// # Returns
     /// - `Ok(())` if the transaction was successfully dispatched and executed
     /// - `Err(String)` if the module was not found or execution failed
-    pub fn dispatch_tx(&self, tx: &Transaction, state: &mut State) -> Result<(), String> {
+    pub fn dispatch_tx(&mut self, tx: &Transaction, state: &mut State) -> Result<(), String> {
         let module = self
             .modules
             .iter()
             .find(|m| m.module_id() == tx.module_id)
             .ok_or_else(|| format!("Unknown module: {}", tx.module_id))?;
 
-        module.dispatch(&tx.call_id, &tx.payload, state)
+        module.dispatch(&tx.call_id, tx, state)
     }
 }
 
 impl Default for Runtime {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::state::State;
+    use crate::core::transaction::{Address, Transaction};
+
+    #[test]
+    fn test_runtime_with_default_modules() {
+        let runtime = Runtime::with_default_modules();
+        assert_eq!(runtime.modules.len(), 3);
+    }
+
+    #[test]
+    fn test_dispatch_unknown_module() {
+        let mut runtime = Runtime::with_default_modules();
+        let mut state = State::in_memory();
+        let tx = Transaction {
+            from: [0; 32],
+            nonce: 0,
+            module_id: "unknown_module".to_string(),
+            call_id: "test".to_string(),
+            payload: vec![],
+            fee: 0,
+            signature: vec![],
+        };
+
+        let result = runtime.dispatch_tx(&tx, &mut state);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown module"));
     }
 }

@@ -12,6 +12,7 @@ use rocksdb::DB;
 
 use crate::core::block::Block;
 use crate::forge::{forge_hash, meets_difficulty, ForgeConfig};
+use crate::runtime::Runtime;
 
 /// Trait for key-value storage backends.
 pub trait KvBackend: Send + Sync {
@@ -120,8 +121,12 @@ impl State {
 
     /// Execute a block, applying all transactions.
     ///
-    /// In Phase 2, this verifies Forge PoW before accepting the block.
-    /// In Phase 3, this will also dispatch transactions to runtime modules.
+    /// This function:
+    /// 1. Verifies Forge PoW
+    /// 2. Dispatches each transaction to the appropriate runtime module
+    ///
+    /// For now, parent hash and state_root consistency are not enforced;
+    /// they will be introduced once block storage and chain selection are added.
     pub fn execute_block(&mut self, block: &Block) -> Result<(), String> {
         // Verify Forge PoW
         let config = ForgeConfig::default();
@@ -132,7 +137,15 @@ impl State {
             return Err("Forge PoW verification failed".into());
         }
 
-        // TODO (Phase 3): Iterate over block.body and dispatch to runtime modules.
+        // Create runtime with all default modules
+        let mut runtime = Runtime::with_default_modules();
+
+        // Dispatch each transaction to the appropriate module
+        for tx in &block.body {
+            runtime.dispatch_tx(tx, self)?;
+        }
+
+        // TODO: calculate and persist new state_root in header.
 
         Ok(())
     }
