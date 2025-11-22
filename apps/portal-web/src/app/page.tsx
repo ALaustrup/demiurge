@@ -212,14 +212,17 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.4 }}
           >
-            <button className="rounded-full bg-sky-500 px-5 py-2 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/30 hover:bg-sky-400">
-              Read the Architecture
+            <button
+              onClick={() => (window.location.href = "/aeon")}
+              className="rounded-full bg-sky-500 px-5 py-2 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/30 hover:bg-sky-400"
+            >
+              Become an Aeon
             </button>
             <button className="rounded-full border border-slate-700 px-5 py-2 text-sm text-slate-200 hover:border-slate-500">
-              For Archons (Creators)
+              Read the Architecture
             </button>
             <button className="rounded-full border border-slate-800 px-5 py-2 text-sm text-slate-300 hover:border-slate-600">
-              For Nomads (Players)
+              Explore the Pantheon
             </button>
           </motion.div>
         </div>

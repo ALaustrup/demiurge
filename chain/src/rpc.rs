@@ -22,7 +22,8 @@ use crate::config::DEV_FAUCET_AMOUNT;
 use crate::core::transaction::{Address, Transaction};
 use crate::node::Node;
 use crate::runtime::{
-    BankCgtModule, FabricRootHash, ListingId, NftDgenModule, NftId, RuntimeModule,
+    add_gnosis_xp, add_syzygy_score, create_aeon_profile, get_aeon_profile, recompute_ascension,
+    update_badges, BankCgtModule, FabricRootHash, ListingId, NftDgenModule, NftId, RuntimeModule,
 };
 
 /// JSON-RPC request envelope.
@@ -100,6 +101,30 @@ pub struct MintDgenNftParams {
     pub fabric_root_hash: String, // hex string
     pub name: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AeonCreateParams {
+    pub address: String, // hex string
+    pub display_name: String,
+    pub bio: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AeonGetParams {
+    pub address: String, // hex string
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AeonRecordSyzygyParams {
+    pub from: String, // hex string - seeding Aeon
+    pub to: String,   // hex string - original content Aeon
+    pub weight: u64,  // volume/importance
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AeonGetAscensionParams {
+    pub address: String, // hex string
 }
 
 /// Helper functions for parsing hex addresses and hashes
@@ -589,6 +614,283 @@ async fn handle_rpc(
                         code: -32603,
                         message: format!("Mint error: {}", msg),
                     }),
+                    id,
+                }),
+            }
+        }
+        "aeon_create" => {
+            let params: AeonCreateParams = match req.params.as_ref() {
+                Some(raw) => serde_json::from_value(raw.clone())
+                    .map_err(|e| e.to_string())
+                    .unwrap_or(AeonCreateParams {
+                        address: String::new(),
+                        display_name: String::new(),
+                        bio: None,
+                    }),
+                None => AeonCreateParams {
+                    address: String::new(),
+                    display_name: String::new(),
+                    bio: None,
+                },
+            };
+
+            let address = match parse_address_hex(&params.address) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let current_height = node.chain_info().height;
+
+            let result = node.with_state_mut(|state| {
+                create_aeon_profile(state, address, params.display_name, params.bio, current_height)
+            });
+
+            match result {
+                Ok(profile) => {
+                    // In dev mode, optionally mint starter CGT
+                    #[cfg(debug_assertions)]
+                    {
+                        let _ = node.with_state_mut(|state| {
+                            let bank_module = BankCgtModule::new();
+                            let mint_params = crate::runtime::bank_cgt::MintToParams {
+                                to: address,
+                                amount: 1_000, // Small starter allowance
+                            };
+                            let mint_tx = Transaction {
+                                from: [0u8; 32],
+                                nonce: 0,
+                                module_id: "bank_cgt".to_string(),
+                                call_id: "mint_to".to_string(),
+                                payload: bincode::serialize(&mint_params)
+                                    .map_err(|e| format!("serialization error: {}", e))?,
+                                fee: 0,
+                                signature: vec![],
+                            };
+                            bank_module.dispatch("mint_to", &mint_tx, state)
+                        });
+                    }
+
+                    Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: Some(json!({
+                            "address": hex::encode(profile.address),
+                            "display_name": profile.display_name,
+                            "bio": profile.bio,
+                            "gnosis_xp": profile.gnosis_xp,
+                            "syzygy_score": profile.syzygy_score,
+                            "ascension_level": profile.ascension_level,
+                            "badges": profile.badges,
+                            "created_at_height": profile.created_at_height,
+                        })),
+                        error: None,
+                        id,
+                    })
+                }
+                Err(msg) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: format!("Failed to create Aeon profile: {}", msg),
+                    }),
+                    id,
+                }),
+            }
+        }
+        "aeon_get" => {
+            let params: AeonGetParams = match req.params.as_ref() {
+                Some(raw) => serde_json::from_value(raw.clone())
+                    .map_err(|e| e.to_string())
+                    .unwrap_or(AeonGetParams {
+                        address: String::new(),
+                    }),
+                None => AeonGetParams {
+                    address: String::new(),
+                },
+            };
+
+            let address = match parse_address_hex(&params.address) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let profile_opt = node.with_state(|state| get_aeon_profile(state, &address));
+
+            Json(JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                result: Some(match profile_opt {
+                    Some(profile) => json!({
+                        "address": hex::encode(profile.address),
+                        "display_name": profile.display_name,
+                        "bio": profile.bio,
+                        "gnosis_xp": profile.gnosis_xp,
+                        "syzygy_score": profile.syzygy_score,
+                        "ascension_level": profile.ascension_level,
+                        "badges": profile.badges,
+                        "created_at_height": profile.created_at_height,
+                    }),
+                    None => serde_json::Value::Null,
+                }),
+                error: None,
+                id,
+            })
+        }
+        "aeon_recordSyzygy" => {
+            let params: AeonRecordSyzygyParams = match req.params.as_ref() {
+                Some(raw) => serde_json::from_value(raw.clone())
+                    .map_err(|e| e.to_string())
+                    .unwrap_or(AeonRecordSyzygyParams {
+                        from: String::new(),
+                        to: String::new(),
+                        weight: 0,
+                    }),
+                None => AeonRecordSyzygyParams {
+                    from: String::new(),
+                    to: String::new(),
+                    weight: 0,
+                },
+            };
+
+            let from_addr = match parse_address_hex(&params.from) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid 'from' address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let _to_addr = match parse_address_hex(&params.to) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid 'to' address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let result: Result<serde_json::Value, String> = node.with_state_mut(|state| {
+                // Add Syzygy Score to seeding Aeon
+                add_syzygy_score(state, &from_addr, params.weight)?;
+
+                // Add Gnosis XP (weight / 2) to seeding Aeon
+                let xp_gain = params.weight / 2;
+                if xp_gain > 0 {
+                    add_gnosis_xp(state, &from_addr, xp_gain)?;
+                }
+
+                // Recompute ascension and update badges
+                recompute_ascension(state, &from_addr)?;
+                update_badges(state, &from_addr)?;
+
+                // Get updated profile
+                let profile = get_aeon_profile(state, &from_addr)
+                    .ok_or("Profile not found after update")?;
+
+                Ok(json!({
+                    "address": hex::encode(profile.address),
+                    "gnosis_xp": profile.gnosis_xp,
+                    "syzygy_score": profile.syzygy_score,
+                    "ascension_level": profile.ascension_level,
+                    "badges": profile.badges,
+                }))
+            });
+
+            match result {
+                Ok(stats) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: Some(stats),
+                    error: None,
+                    id,
+                }),
+                Err(msg) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: format!("Failed to record Syzygy: {}", msg),
+                    }),
+                    id,
+                }),
+            }
+        }
+        "aeon_getAscension" => {
+            let params: AeonGetAscensionParams = match req.params.as_ref() {
+                Some(raw) => serde_json::from_value(raw.clone())
+                    .map_err(|e| e.to_string())
+                    .unwrap_or(AeonGetAscensionParams {
+                        address: String::new(),
+                    }),
+                None => AeonGetAscensionParams {
+                    address: String::new(),
+                },
+            };
+
+            let address = match parse_address_hex(&params.address) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let profile_opt = node.with_state(|state| get_aeon_profile(state, &address));
+
+            match profile_opt {
+                Some(profile) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: Some(json!({
+                        "gnosis_xp": profile.gnosis_xp,
+                        "syzygy_score": profile.syzygy_score,
+                        "ascension_level": profile.ascension_level,
+                        "badges": profile.badges,
+                    })),
+                    error: None,
+                    id,
+                }),
+                None => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: Some(serde_json::Value::Null),
+                    error: None,
                     id,
                 }),
             }

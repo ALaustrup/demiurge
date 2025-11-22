@@ -14,7 +14,10 @@ pub mod fabric_manager;
 pub mod nft_dgen;
 
 pub use abyss_registry::{get_listing, AbyssRegistryModule, ListingId};
-pub use avatars_profiles::{is_archon, AvatarsProfilesModule};
+pub use avatars_profiles::{
+    add_gnosis_xp, add_syzygy_score, create_aeon_profile, get_aeon_profile, is_archon,
+    recompute_ascension, update_badges, AvatarsProfilesModule, AeonProfile,
+};
 pub use bank_cgt::{get_balance_cgt, BankCgtModule};
 pub use fabric_manager::{get_fabric_asset, FabricManagerModule, FabricRootHash};
 pub use nft_dgen::{get_nft, get_nfts_by_owner, NftDgenModule, NftId};
