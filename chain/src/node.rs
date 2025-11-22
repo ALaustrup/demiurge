@@ -8,13 +8,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use bincode;
 
+use crate::config::{GENESIS_ARCHON_ADDRESS, GENESIS_ARCHON_INITIAL_BALANCE};
 use crate::core::block::Block;
 use crate::core::state::State;
 use crate::core::transaction::{Address, Transaction};
 use crate::runtime::{
     get_balance_cgt, get_fabric_asset, get_listing, get_nft, get_nfts_by_owner, is_archon,
-    FabricRootHash, ListingId, NftId,
+    AvatarsProfilesModule, BankCgtModule, FabricRootHash, ListingId, NftId, RuntimeModule,
 };
 
 /// Chain information returned by JSON-RPC queries.
@@ -51,8 +53,15 @@ impl Node {
     ///
     /// # Returns
     /// A new Node instance with empty mempool and height 0
+    ///
+    /// # Note
+    /// This function automatically initializes genesis state if not already done.
     pub fn new(db_path: PathBuf) -> Result<Self> {
-        let state = State::open_rocksdb(&db_path)?;
+        let mut state = State::open_rocksdb(&db_path)?;
+        
+        // Initialize genesis state if needed
+        init_genesis_state(&mut state)?;
+        
         Ok(Self {
             state: Arc::new(Mutex::new(state)),
             db_path,
@@ -139,4 +148,72 @@ impl Node {
     ) -> Option<crate::runtime::fabric_manager::FabricAsset> {
         self.with_state(|state| get_fabric_asset(state, root))
     }
+
+    /// Execute a function with mutable access to state.
+    ///
+    /// This helper provides thread-safe mutable access to the state for operations
+    /// like genesis initialization, dev faucet, and direct minting.
+    pub fn with_state_mut<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+        let mut state = self.state.lock().expect("state mutex poisoned");
+        f(&mut state)
+    }
+}
+
+/// Initialize genesis state if not already initialized.
+///
+/// This function:
+/// 1. Checks if genesis has already been initialized
+/// 2. If not, mints CGT to the Genesis Archon address
+/// 3. Marks the Genesis Archon address as an Archon
+/// 4. Sets the genesis initialization flag
+fn init_genesis_state(state: &mut State) -> Result<()> {
+    const KEY_GENESIS_INITIALIZED: &[u8] = b"demiurge/genesis_initialized";
+
+    // Check if already initialized
+    if state.get_raw(KEY_GENESIS_INITIALIZED).is_some() {
+        return Ok(());
+    }
+
+    // Initialize Genesis Archon: mint CGT and mark as Archon
+    let genesis_addr = GENESIS_ARCHON_ADDRESS;
+
+    // Mint CGT to Genesis Archon
+    let bank_module = BankCgtModule::new();
+    let mint_params = crate::runtime::bank_cgt::MintToParams {
+        to: genesis_addr,
+        amount: GENESIS_ARCHON_INITIAL_BALANCE,
+    };
+    let mint_tx = Transaction {
+        from: [0u8; 32], // Genesis authority (all zeros)
+        nonce: 0,
+        module_id: "bank_cgt".to_string(),
+        call_id: "mint_to".to_string(),
+        payload: bincode::serialize(&mint_params)?,
+        fee: 0,
+        signature: vec![],
+    };
+    bank_module
+        .dispatch("mint_to", &mint_tx, state)
+        .map_err(|e| anyhow::anyhow!("Failed to mint genesis CGT: {}", e))?;
+
+    // Mark Genesis Archon as Archon
+    let avatars_module = AvatarsProfilesModule::new();
+    let claim_tx = Transaction {
+        from: genesis_addr,
+        nonce: 0,
+        module_id: "avatars_profiles".to_string(),
+        call_id: "claim_archon".to_string(),
+        payload: vec![],
+        fee: 0,
+        signature: vec![],
+    };
+    avatars_module
+        .dispatch("claim_archon", &claim_tx, state)
+        .map_err(|e| anyhow::anyhow!("Failed to claim genesis Archon: {}", e))?;
+
+    // Mark genesis as initialized
+    state
+        .put_raw(KEY_GENESIS_INITIALIZED.to_vec(), vec![1u8])?;
+
+    Ok(())
 }

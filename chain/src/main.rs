@@ -17,6 +17,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::net::TcpListener;
 
+mod config;
 mod core;
 mod forge;
 mod node;

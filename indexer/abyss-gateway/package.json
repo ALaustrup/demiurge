@@ -9,7 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@graphql-yoga/node": "^5.0.0",
+    "@graphql-yoga/node": "^3.9.1",
     "graphql": "^16.8.1"
   },
   "devDependencies": {

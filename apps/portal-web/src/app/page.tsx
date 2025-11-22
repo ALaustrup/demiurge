@@ -1,25 +1,36 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Activity, CircuitBoard, Sparkles, Users } from "lucide-react";
+import { Activity, CircuitBoard, Sparkles, Users, Wallet, Coins } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { DEMIURGE_RPC_URL, GENESIS_ARCHON_ADDRESS } from "@/config/demiurge";
 
 type ChainInfo = {
   height: number;
 };
 
-const RPC_URL =
-  process.env.NEXT_PUBLIC_DEMIURGE_RPC_URL || "http://127.0.0.1:8545/rpc";
+type Nft = {
+  id: number;
+  owner: string;
+  creator: string;
+  fabric_root_hash: string;
+  royalty_bps?: number;
+};
 
 export default function HomePage() {
   const [chainInfo, setChainInfo] = useState<ChainInfo | null>(null);
   const [rpcError, setRpcError] = useState<string | null>(null);
+  const [genesisBalance, setGenesisBalance] = useState<number | null>(null);
+  const [genesisNfts, setGenesisNfts] = useState<Nft[]>([]);
+  const [isArchon, setIsArchon] = useState<boolean>(false);
+  const [minting, setMinting] = useState(false);
+  const [genesisError, setGenesisError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchChainInfo = async () => {
       try {
-        const res = await axios.post(RPC_URL, {
+        const res = await axios.post(DEMIURGE_RPC_URL, {
           jsonrpc: "2.0",
           method: "cgt_getChainInfo",
           params: null,
@@ -44,6 +55,124 @@ export default function HomePage() {
     const interval = setInterval(fetchChainInfo, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch Genesis Archon data
+  useEffect(() => {
+    const fetchGenesisData = async () => {
+      try {
+        // Fetch balance
+        const balanceRes = await axios.post(DEMIURGE_RPC_URL, {
+          jsonrpc: "2.0",
+          method: "cgt_getBalance",
+          params: { address: GENESIS_ARCHON_ADDRESS },
+          id: 2,
+        });
+        if (balanceRes.data.result) {
+          setGenesisBalance(balanceRes.data.result.balance || 0);
+        }
+
+        // Fetch Archon status
+        const archonRes = await axios.post(DEMIURGE_RPC_URL, {
+          jsonrpc: "2.0",
+          method: "cgt_isArchon",
+          params: { address: GENESIS_ARCHON_ADDRESS },
+          id: 3,
+        });
+        if (archonRes.data.result) {
+          setIsArchon(archonRes.data.result.is_archon || false);
+        }
+
+        // Fetch NFTs
+        const nftsRes = await axios.post(DEMIURGE_RPC_URL, {
+          jsonrpc: "2.0",
+          method: "cgt_getNftsByOwner",
+          params: { address: GENESIS_ARCHON_ADDRESS },
+          id: 4,
+        });
+        if (nftsRes.data.result && nftsRes.data.result.nfts) {
+          setGenesisNfts(nftsRes.data.result.nfts);
+        }
+        setGenesisError(null);
+      } catch (err: any) {
+        setGenesisError(err.message ?? "Failed to fetch Genesis data");
+      }
+    };
+
+    fetchGenesisData();
+    const interval = setInterval(fetchGenesisData, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMintTestNft = async () => {
+    if (minting) return;
+    setMinting(true);
+    setGenesisError(null);
+
+    try {
+      // Optional: Call faucet first (only in dev)
+      if (process.env.NODE_ENV !== "production") {
+        try {
+          await axios.post(DEMIURGE_RPC_URL, {
+            jsonrpc: "2.0",
+            method: "cgt_devFaucet",
+            params: { address: GENESIS_ARCHON_ADDRESS },
+            id: 5,
+          });
+        } catch (e) {
+          // Faucet might fail, continue anyway
+        }
+      }
+
+      // Generate dummy hashes for test NFT
+      const fabricHash = Array.from({ length: 64 }, () =>
+        Math.floor(Math.random() * 16).toString(16)
+      ).join("");
+
+      // Mint NFT
+      const mintRes = await axios.post(DEMIURGE_RPC_URL, {
+        jsonrpc: "2.0",
+        method: "cgt_mintDgenNft",
+        params: {
+          owner: GENESIS_ARCHON_ADDRESS,
+          fabric_root_hash: fabricHash,
+          forge_model_id: null,
+          forge_prompt_hash: null,
+          name: "Genesis Relic",
+          description: "A test D-GEN NFT minted from the portal",
+        },
+        id: 6,
+      });
+
+      if (mintRes.data.error) {
+        setGenesisError(mintRes.data.error.message ?? "Mint failed");
+      } else {
+        // Refresh data
+        const balanceRes = await axios.post(DEMIURGE_RPC_URL, {
+          jsonrpc: "2.0",
+          method: "cgt_getBalance",
+          params: { address: GENESIS_ARCHON_ADDRESS },
+          id: 7,
+        });
+        if (balanceRes.data.result) {
+          setGenesisBalance(balanceRes.data.result.balance || 0);
+        }
+
+        const nftsRes = await axios.post(DEMIURGE_RPC_URL, {
+          jsonrpc: "2.0",
+          method: "cgt_getNftsByOwner",
+          params: { address: GENESIS_ARCHON_ADDRESS },
+          id: 8,
+        });
+        if (nftsRes.data.result && nftsRes.data.result.nfts) {
+          setGenesisNfts(nftsRes.data.result.nfts);
+        }
+      }
+    } catch (err: any) {
+      setGenesisError(err.message ?? "Failed to mint NFT");
+    } finally {
+      setMinting(false);
+    }
+  };
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-16 px-6 py-12">
@@ -124,7 +253,7 @@ export default function HomePage() {
                 <div className="flex justify-between">
                   <span>RPC</span>
                   <span className="max-w-[180px] truncate font-mono text-slate-400">
-                    {RPC_URL}
+                    {DEMIURGE_RPC_URL}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -169,6 +298,92 @@ export default function HomePage() {
           title="D-GEN NFTs"
           body="AI-native, provenance-rich NFTs anchored to Fabric content and traded in the Abyss marketplace with programmable royalties."
         />
+      </section>
+
+      {/* GENESIS ARCHON DASHBOARD */}
+      <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-100">
+            Genesis Archon Dashboard
+          </h2>
+          {isArchon && (
+            <span className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-400">
+              ARCHON
+            </span>
+          )}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Address & Balance */}
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+              <Wallet className="h-4 w-4 text-sky-400" />
+              Address
+            </div>
+            <p className="font-mono text-xs text-slate-400 break-all">
+              {GENESIS_ARCHON_ADDRESS.slice(0, 8)}...{GENESIS_ARCHON_ADDRESS.slice(-8)}
+            </p>
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-300 mt-3">
+              <Coins className="h-4 w-4 text-emerald-400" />
+              CGT Balance
+            </div>
+            <p className="text-lg font-mono font-semibold text-emerald-400">
+              {genesisBalance !== null
+                ? genesisBalance.toLocaleString()
+                : "—"}{" "}
+              CGT
+            </p>
+          </div>
+
+          {/* NFTs */}
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                <Sparkles className="h-4 w-4 text-violet-400" />
+                D-GEN NFTs
+              </div>
+              <span className="text-xs text-slate-500">
+                {genesisNfts.length} owned
+              </span>
+            </div>
+            {genesisNfts.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {genesisNfts.map((nft) => (
+                  <div
+                    key={nft.id}
+                    className="rounded-lg border border-slate-700 bg-slate-800/30 p-2 text-xs"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-sky-300">#{nft.id}</span>
+                      <span className="text-slate-500 text-[10px]">
+                        {nft.fabric_root_hash.slice(0, 8)}...
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">No NFTs yet</p>
+            )}
+          </div>
+        </div>
+
+        {/* Mint Button (Dev Only) */}
+        {process.env.NODE_ENV !== "production" && (
+          <div className="pt-2">
+            <button
+              onClick={handleMintTestNft}
+              disabled={minting || !isArchon}
+              className="rounded-full bg-violet-500 px-5 py-2 text-sm font-medium text-slate-50 shadow-lg shadow-violet-500/30 hover:bg-violet-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {minting ? "Minting..." : "Mint Test NFT"}
+            </button>
+          </div>
+        )}
+
+        {genesisError && (
+          <p className="text-xs text-rose-400 mt-2">{genesisError}</p>
+        )}
       </section>
 
       {/* HIGH-LEVEL ARCHITECTURE TEXT BLOCK */}

@@ -47,7 +47,10 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
-# Qt
+# Qt / CMake build dirs
+**/build/
+**/CMakeLists.txt.user
+*.user
 *.pro.user
 *.pro.user.*
 *.qmlc
@@ -91,4 +94,7 @@ temp/
 *.tmp
 *.bak
 *.cache
+
+# Turbo
+.turbo/
 

@@ -17,9 +17,12 @@ use axum::{extract::Extension, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::core::transaction::Address;
+use crate::config::DEV_FAUCET_AMOUNT;
+use crate::core::transaction::{Address, Transaction};
 use crate::node::Node;
-use crate::runtime::{FabricRootHash, ListingId, NftId};
+use crate::runtime::{
+    BankCgtModule, FabricRootHash, ListingId, NftDgenModule, NftId, RuntimeModule,
+};
 
 /// JSON-RPC request envelope.
 #[derive(Debug, Deserialize)]
@@ -81,6 +84,21 @@ pub struct GetListingParams {
 #[derive(Debug, Deserialize)]
 pub struct GetFabricAssetParams {
     pub fabric_root_hash: String, // hex string
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DevFaucetParams {
+    pub address: String, // hex string
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MintDgenNftParams {
+    pub owner: String, // hex string
+    pub forge_model_id: Option<String>, // hex string (optional)
+    pub forge_prompt_hash: Option<String>, // hex string (optional)
+    pub fabric_root_hash: String, // hex string
+    pub name: String,
+    pub description: Option<String>,
 }
 
 /// Helper functions for parsing hex addresses and hashes
@@ -320,6 +338,253 @@ async fn handle_rpc(
                 error: None,
                 id,
             })
+        }
+        "cgt_devFaucet" => {
+            #[cfg(not(debug_assertions))]
+            {
+                return Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32601,
+                        message: "Dev faucet not available in release mode".to_string(),
+                    }),
+                    id,
+                });
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                let params: DevFaucetParams = match req.params.as_ref() {
+                    Some(raw) => serde_json::from_value(raw.clone())
+                        .map_err(|e| e.to_string())
+                        .unwrap_or(DevFaucetParams {
+                            address: String::new(),
+                        }),
+                    None => DevFaucetParams {
+                        address: String::new(),
+                    },
+                };
+
+                match parse_address_hex(&params.address) {
+                    Ok(addr) => {
+                        // Mint CGT directly via state mutation
+                        let result: Result<u64, String> = node.with_state_mut(|state| {
+                            let bank_module = BankCgtModule::new();
+                            let mint_params = crate::runtime::bank_cgt::MintToParams {
+                                to: addr,
+                                amount: DEV_FAUCET_AMOUNT,
+                            };
+                            let mint_tx = Transaction {
+                                from: [0u8; 32], // Genesis authority
+                                nonce: 0,
+                                module_id: "bank_cgt".to_string(),
+                                call_id: "mint_to".to_string(),
+                                payload: bincode::serialize(&mint_params)
+                                    .map_err(|e| format!("serialization error: {}", e))?,
+                                fee: 0,
+                                signature: vec![],
+                            };
+                            bank_module
+                                .dispatch("mint_to", &mint_tx, state)
+                                .map_err(|e| format!("mint failed: {}", e))?;
+
+                            // Get new balance
+                            let balance = crate::runtime::bank_cgt::get_balance_cgt(state, &addr);
+                            Ok(balance)
+                        });
+
+                        match result {
+                            Ok(new_balance) => Json(JsonRpcResponse {
+                                jsonrpc: "2.0".to_string(),
+                                result: Some(json!({
+                                    "ok": true,
+                                    "new_balance": new_balance
+                                })),
+                                error: None,
+                                id,
+                            }),
+                            Err(msg) => Json(JsonRpcResponse {
+                                jsonrpc: "2.0".to_string(),
+                                result: None,
+                                error: Some(JsonRpcError {
+                                    code: -32603,
+                                    message: format!("Faucet error: {}", msg),
+                                }),
+                                id,
+                            }),
+                        }
+                    }
+                    Err(msg) => Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: msg,
+                        }),
+                        id,
+                    }),
+                }
+            }
+        }
+        "cgt_mintDgenNft" => {
+            let params: MintDgenNftParams = match req.params.as_ref() {
+                Some(raw) => serde_json::from_value(raw.clone())
+                    .map_err(|e| e.to_string())
+                    .unwrap_or(MintDgenNftParams {
+                        owner: String::new(),
+                        forge_model_id: None,
+                        forge_prompt_hash: None,
+                        fabric_root_hash: String::new(),
+                        name: String::new(),
+                        description: None,
+                    }),
+                None => MintDgenNftParams {
+                    owner: String::new(),
+                    forge_model_id: None,
+                    forge_prompt_hash: None,
+                    fabric_root_hash: String::new(),
+                    name: String::new(),
+                    description: None,
+                },
+            };
+
+            let owner_addr = match parse_address_hex(&params.owner) {
+                Ok(addr) => addr,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid owner address: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let fabric_hash = match parse_address_hex(&params.fabric_root_hash) {
+                Ok(hash) => hash,
+                Err(msg) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid fabric_root_hash: {}", msg),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let forge_model_id = match params
+                .forge_model_id
+                .as_ref()
+                .map(|s| parse_address_hex(s))
+                .transpose()
+            {
+                Ok(Some(hash)) => Some(hash),
+                Ok(None) => None,
+                Err(e) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid forge_model_id: {}", e),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            let forge_prompt_hash = match params
+                .forge_prompt_hash
+                .as_ref()
+                .map(|s| parse_address_hex(s))
+                .transpose()
+            {
+                Ok(Some(hash)) => Some(hash),
+                Ok(None) => None,
+                Err(e) => {
+                    return Json(JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32602,
+                            message: format!("invalid forge_prompt_hash: {}", e),
+                        }),
+                        id,
+                    });
+                }
+            };
+
+            // For dev mode, we'll use Genesis Archon as the signer if owner is Genesis Archon
+            // Otherwise, we'll bypass signature checks and mint directly
+            let result = node.with_state_mut(|state| {
+                // Check if owner is Archon (required for minting)
+                if !crate::runtime::avatars_profiles::is_archon(state, &owner_addr) {
+                    return Err("only Archons may mint D-GEN NFTs".to_string());
+                }
+
+                let nft_module = NftDgenModule::new();
+                let mint_params = crate::runtime::nft_dgen::MintDgenParams {
+                    fabric_root_hash: fabric_hash,
+                    forge_model_id,
+                    forge_prompt_hash,
+                    royalty_recipient: None,
+                    royalty_bps: 0,
+                };
+
+                let mint_tx = Transaction {
+                    from: owner_addr,
+                    nonce: 0, // For dev, we skip nonce checks
+                    module_id: "nft_dgen".to_string(),
+                    call_id: "mint_dgen".to_string(),
+                    payload: bincode::serialize(&mint_params)
+                        .map_err(|e| format!("serialization error: {}", e))?,
+                    fee: 0,
+                    signature: vec![],
+                };
+
+                nft_module
+                    .dispatch("mint_dgen", &mint_tx, state)
+                    .map_err(|e| format!("mint failed: {}", e))?;
+
+                // Get the newly minted NFT ID (it will be the current counter - 1)
+                let nft_ids = crate::runtime::nft_dgen::get_nfts_by_owner(state, &owner_addr);
+                let nft_id = nft_ids.last().copied().ok_or("NFT not found after minting")?;
+                let nft_meta = crate::runtime::nft_dgen::get_nft(state, nft_id)
+                    .ok_or("NFT metadata not found")?;
+
+                Ok((nft_id, nft_meta))
+            });
+
+            match result {
+                Ok((nft_id, nft_meta)) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: Some(json!({
+                        "nft_id": nft_id,
+                        "owner": hex::encode(nft_meta.owner),
+                        "fabric_root_hash": hex::encode(nft_meta.fabric_root_hash),
+                        "forge_model_id": nft_meta.forge_model_id.map(hex::encode),
+                        "forge_prompt_hash": nft_meta.forge_prompt_hash.map(hex::encode),
+                    })),
+                    error: None,
+                    id,
+                }),
+                Err(msg) => Json(JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: format!("Mint error: {}", msg),
+                    }),
+                    id,
+                }),
+            }
         }
         "cgt_sendRawTransaction" => {
             let tx_hex = req
